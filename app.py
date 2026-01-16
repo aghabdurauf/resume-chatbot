@@ -1,21 +1,14 @@
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 import os
-from dotenv import load_dotenv
 from pypdf import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 import chromadb
 
-# Load environment variables (for local development)
-load_dotenv()
-
-# Initialize Gemini AI - use Streamlit secrets if available, otherwise use .env
-if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-else:
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Initialize Groq client using Streamlit Secrets
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Configuration - use relative path for deployment
 RESUME_PDF_PATH = os.path.join(os.path.dirname(__file__), "resume.pdf")
@@ -41,18 +34,25 @@ def load_and_process_resume():
     for page in pdf_reader.pages:
         text += page.extract_text()
 
-    # Split text into chunks
+    # Split text into chunks (larger chunks for better context)
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=1000,
+        chunk_overlap=200,
         length_function=len,
-        separators=["\n\n", "\n", " ", ""]
+        separators=["\n\n", "\n", ".", " ", ""]
     )
 
     chunks = text_splitter.split_text(text)
 
     # Create embeddings
     embeddings = get_embeddings()
+
+    # Delete existing collection if exists and create fresh
+    chroma_client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+    try:
+        chroma_client.delete_collection("resume_collection")
+    except:
+        pass
 
     # Create vector database
     vectordb = Chroma.from_texts(
@@ -62,54 +62,89 @@ def load_and_process_resume():
         collection_name="resume_collection"
     )
 
-    return vectordb
+    return vectordb, chunks
 
 # Initialize vector database
 try:
-    vectordb = load_and_process_resume()
+    vectordb, resume_chunks = load_and_process_resume()
 except Exception as e:
     st.error(f"Error loading resume: {str(e)}")
     vectordb = None
+    resume_chunks = []
 
-def retrieve_relevant_context(query, k=3):
+def retrieve_relevant_context(query, k=5):
     """Retrieve relevant chunks from vector database"""
     if vectordb is None:
+        # Fallback to raw chunks if vectordb failed
+        if resume_chunks:
+            return "\n\n".join(resume_chunks[:k])
         return ""
 
-    # Retrieve similar documents
-    docs = vectordb.similarity_search(query, k=k)
-
-    # Combine retrieved chunks
-    context = "\n\n".join([doc.page_content for doc in docs])
-    return context
+    try:
+        # Retrieve similar documents
+        docs = vectordb.similarity_search(query, k=k)
+        # Combine retrieved chunks
+        context = "\n\n".join([doc.page_content for doc in docs])
+        return context
+    except Exception as e:
+        # Fallback to raw chunks
+        if resume_chunks:
+            return "\n\n".join(resume_chunks[:k])
+        return ""
 
 def generate_response(query, context):
-    """Generate response using Gemini with retrieved context"""
+    """Generate response using Groq Llama 3 with retrieved context"""
 
-    system_instruction = f"""You are a helpful assistant representing Abdul Rauf Agha.
-    You have access to his resume and professional information.
-    Answer questions about his experience, skills, projects, and qualifications based on the following context:
+    system_prompt = """You are **Tipu**, a professional AI assistant representing **Abdul Rauf**.
 
-    CONTEXT:
-    {context}
+Your sole responsibility is to answer questions about **Abdul Rauf's professional career** using **only the information retrieved from the knowledge base (RAG)**.
 
-    Important guidelines:
-    - Only provide information that is in the provided context
-    - Be professional and concise
-    - If asked about something not in the context, politely say you don't have that information
-    - Highlight relevant achievements and metrics when appropriate
-    - Be enthusiastic about Abdul Rauf's qualifications
-    """
+### Greeting Behavior
 
-    # Initialize Gemini model
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        system_instruction=system_instruction
+When a user greets with words like **Hello, Hi, Hey, Salaam**, or similar, respond exactly with:
+
+> **Hey, happy to see you. I am Tipu, the assistant of Abdul Rauf. What would you like to know about Abdul Rauf's professional career?**
+
+Do not add anything else.
+
+### Answering Rules
+
+* Always retrieve information from RAG before answering.
+* Do **not** use prior knowledge, assumptions, or external information.
+* Do **not** infer, guess, or fill gaps.
+* If the answer is **not found in RAG**, respond with:
+
+  > *I'm sorry, I don't have that information available in Abdul Rauf's professional records.*
+
+### Tone & Style
+
+* Be polite, professional, and concise.
+* Stick strictly to the question asked.
+* Do not add extra context, suggestions, or opinions.
+* Do not exaggerate or rephrase facts beyond what exists in RAG.
+
+### Hallucination Guardrail
+
+* If RAG data is incomplete, unclear, or missing, clearly state the limitation.
+* Never fabricate roles, skills, achievements, timelines, or experience.
+
+Accuracy is mandatory. Creativity is not allowed.
+
+### RAG CONTEXT (Use ONLY this information to answer):
+{context}"""
+
+    # Generate response using Groq
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_prompt.format(context=context)},
+            {"role": "user", "content": query}
+        ],
+        model="llama-3.1-8b-instant",
+        temperature=0.7,
+        max_tokens=1024
     )
 
-    # Generate response
-    response = model.generate_content(query)
-    return response.text
+    return chat_completion.choices[0].message.content
 
 # Streamlit UI Configuration
 st.set_page_config(
@@ -119,16 +154,15 @@ st.set_page_config(
 )
 
 # Title and description
-st.title("💼 Abdul Rauf Agha - Resume Chatbot (RAG-Based)")
-st.markdown("**Ask me anything about Abdul Rauf's professional experience, skills, and qualifications!**")
-st.markdown("*This chatbot uses RAG (Retrieval Augmented Generation) technology*")
+st.title("💼 Tipu - Abdul Rauf's AI Assistant")
+st.markdown("**Ask me anything about Abdul Rauf's professional career!**")
 st.divider()
 
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
     # Add welcome message
-    welcome_msg = "Hello! I'm Abdul Rauf's Resume Assistant powered by RAG. I retrieve relevant information from his resume to answer your questions accurately. What would you like to know?"
+    welcome_msg = "Hey, happy to see you. I am Tipu, the assistant of Abdul Rauf. What would you like to know about Abdul Rauf's professional career?"
     st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
 
 # Display chat history
@@ -150,9 +184,9 @@ if prompt := st.chat_input("Ask about Abdul Rauf's experience, skills, or projec
         with st.spinner("Retrieving relevant information..."):
             try:
                 # Step 1: Retrieve relevant context from vector database
-                context = retrieve_relevant_context(prompt, k=3)
+                context = retrieve_relevant_context(prompt, k=5)
 
-                # Step 2: Generate response using Gemini with retrieved context
+                # Step 2: Generate response using Groq with retrieved context
                 assistant_response = generate_response(prompt, context)
 
                 # Display response
@@ -161,12 +195,8 @@ if prompt := st.chat_input("Ask about Abdul Rauf's experience, skills, or projec
                 # Add to chat history
                 st.session_state.messages.append({"role": "assistant", "content": assistant_response})
 
-                # Show retrieved context in expander (for debugging/transparency)
-                with st.expander("🔍 View Retrieved Context (RAG)"):
-                    st.text(context)
-
             except Exception as e:
-                error_message = f"Error: {str(e)}\n\nPlease make sure your Gemini API key is set correctly in the .env file."
+                error_message = f"Error: {str(e)}\n\nPlease make sure your Groq API key is set correctly."
                 st.error(error_message)
                 st.session_state.messages.append({"role": "assistant", "content": error_message})
 
@@ -182,7 +212,7 @@ with st.sidebar:
     - 🔢 Creates vector embeddings
     - 🗄️ Stores in ChromaDB vector database
     - 🔍 Retrieves only relevant chunks
-    - 🤖 Generates answers using Gemini AI
+    - 🤖 Generates answers using Llama 3
 
     **You can ask about:**
     - Work experience and projects
@@ -190,13 +220,6 @@ with st.sidebar:
     - Education and certifications
     - Specific achievements
     - Contact information
-
-    **Example Questions:**
-    - What AI projects has Abdul Rauf worked on?
-    - What are his main technical skills?
-    - Tell me about his experience with Power BI
-    - What certifications does he have?
-    - Has he worked with healthcare data?
     """)
 
     st.divider()
@@ -214,7 +237,8 @@ with st.sidebar:
     if vectordb:
         st.success("✅ Vector DB Loaded")
         st.info("📊 Chunks: Multiple")
-        st.info("🧠 Model: all-MiniLM-L6-v2")
+        st.info("🧠 Embeddings: all-MiniLM-L6-v2")
+        st.info("🤖 LLM: Llama 3.1 8B Instant (Groq)")
     else:
         st.error("❌ Vector DB Not Loaded")
 
