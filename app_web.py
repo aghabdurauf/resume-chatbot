@@ -24,6 +24,8 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 _embeddings = None
 _vectordb = None
 _resume_chunks = []
+_initialized = False
+_initialization_error = None
 
 
 def get_embeddings():
@@ -66,6 +68,28 @@ def load_and_process_resume():
         persist_directory=CHROMA_DB_PATH,
         collection_name="resume_collection",
     )
+
+
+def ensure_initialized():
+    """Lazy initialization - only runs on first request"""
+    global _initialized, _initialization_error
+
+    if _initialized:
+        return True
+
+    if _initialization_error:
+        return False
+
+    try:
+        print("🔄 Initializing RAG system (lazy loading)...")
+        load_and_process_resume()
+        _initialized = True
+        print("✅ RAG system ready!")
+        return True
+    except Exception as e:
+        _initialization_error = str(e)
+        print(f"❌ Initialization failed: {e}")
+        return False
 
 
 def retrieve_relevant_context(query, k=5):
@@ -135,6 +159,12 @@ Accuracy is mandatory. Creativity is not allowed.
 
 # --- Flask Routes ---
 
+@app.route("/health")
+def health():
+    """Health check endpoint for Render"""
+    return jsonify({"status": "healthy", "initialized": _initialized}), 200
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -142,6 +172,12 @@ def index():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
+    # Lazy initialization on first request
+    if not ensure_initialized():
+        return jsonify({
+            "error": f"System initialization failed: {_initialization_error}. Please try again later."
+        }), 503
+
     data = request.get_json()
     user_message = data.get("message", "").strip()
     if not user_message:
@@ -157,12 +193,7 @@ def chat():
 
 # --- Startup ---
 
-print("Loading resume and building vector database...")
-try:
-    load_and_process_resume()
-    print("Vector database ready!")
-except Exception as e:
-    print(f"Warning: Failed to load resume - {e}")
+print("🚀 Flask app starting... (RAG will initialize on first request)")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
