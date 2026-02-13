@@ -154,7 +154,13 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
             if row.get('embedding') is None:
                 continue  # Skip rows with null embeddings
 
-            embedding = np.array(row['embedding'], dtype=np.float32)
+            # Handle both string and list formats
+            embedding_data = row['embedding']
+            if isinstance(embedding_data, str):
+                import json
+                embedding_data = json.loads(embedding_data)
+
+            embedding = np.array(embedding_data, dtype=np.float32)
 
             # Validate embedding shape
             if embedding.shape != query_vec.shape:
