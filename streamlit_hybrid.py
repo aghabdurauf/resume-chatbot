@@ -78,11 +78,12 @@ def get_embeddings_model():
 def initialize_vector_store(supabase: Client, model: SentenceTransformer):
     """Check if vectors exist, if not, create them"""
 
-    # Check if table has data
-    response = supabase.table('resume_embeddings').select('id').limit(1).execute()
+    # Check if table has data and get actual count
+    response = supabase.table('resume_embeddings').select('id', count='exact').execute()
 
     if len(response.data) > 0:
-        st.success(f"✅ Vector store ready ({len(response.data)} embeddings)")
+        total_count = response.count if hasattr(response, 'count') else len(response.data)
+        st.success(f"✅ Vector store ready ({total_count} embeddings)")
         return True
 
     # If no data, need to initialize
