@@ -192,8 +192,8 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
     return [content for content, _ in similarities[:k]]
 
 # Generate response
-def generate_response(query: str, context: str, client: Groq):
-    """Generate response using Groq"""
+def generate_response(query: str, context: str, client: Groq, conversation_history: list = None):
+    """Generate response using Groq with conversation history"""
 
     system_prompt = """You are **Tipu**, a professional AI assistant representing **Abdul Rauf**.
 
@@ -207,21 +207,33 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 
 ### Answering Rules
 
-* Use ONLY information from the context
-* If answer not found, say: *I'm sorry, I don't have that information available in Abdul Rauf's professional records.*
+* Use ONLY information from the context provided below
+* Pay close attention to company names and dates - do NOT mix up different companies
+* If the question asks about a specific company, ONLY mention that company's information
+* If answer not found in context, say: *I'm sorry, I don't have that information available in Abdul Rauf's professional records.*
 * Be concise and professional
+* Read the context carefully before answering
 
 ### CONTEXT:
 {context}"""
 
     try:
+        # Build messages with conversation history
+        messages = [
+            {"role": "system", "content": system_prompt.format(context=context)}
+        ]
+
+        # Add conversation history (last 6 messages to keep context manageable)
+        if conversation_history:
+            messages.extend(conversation_history[-6:])
+
+        # Add current query
+        messages.append({"role": "user", "content": query})
+
         chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt.format(context=context)},
-                {"role": "user", "content": query}
-            ],
+            messages=messages,
             model="llama-3.1-8b-instant",
-            temperature=0.7,
+            temperature=0.5,  # Reduced for more focused answers
             max_tokens=1024,
         )
         return chat_completion.choices[0].message.content
@@ -280,7 +292,7 @@ def main():
 
         # Search and generate
         with st.spinner("🔍 Searching Supabase..."):
-            relevant_chunks = search_similar(user_input, supabase, model, k=3)
+            relevant_chunks = search_similar(user_input, supabase, model, k=5)  # Increased for better context
             context = "\n\n".join(relevant_chunks)
 
         # DEBUG: Show what was found
@@ -292,7 +304,13 @@ def main():
             st.text(f"Full context length: {len(context)} characters")
 
         with st.spinner("💭 Thinking..."):
-            response = generate_response(user_input, context, groq_client)
+            # Pass conversation history for context-aware responses
+            response = generate_response(
+                user_input,
+                context,
+                groq_client,
+                conversation_history=st.session_state.messages[:-1]  # Exclude current message
+            )
 
         # Add assistant message
         st.session_state.messages.append({"role": "assistant", "content": response})
