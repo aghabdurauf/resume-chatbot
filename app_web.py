@@ -96,14 +96,17 @@ def ensure_initialized():
         return False
 
     try:
-        print("🔄 Initializing RAG system (lazy loading)...")
+        print("🔄 Initializing RAG system (lazy loading)...", flush=True)
+        import traceback
         load_and_process_resume()
         _initialized = True
-        print("✅ RAG system ready!")
+        print("✅ RAG system ready!", flush=True)
         return True
     except Exception as e:
         _initialization_error = str(e)
-        print(f"❌ Initialization failed: {e}")
+        error_traceback = traceback.format_exc()
+        print(f"❌ Initialization failed: {e}", flush=True)
+        print(f"Traceback: {error_traceback}", flush=True)
         return False
 
 
@@ -179,6 +182,20 @@ Accuracy is mandatory. Creativity is not allowed.
 def health():
     """Health check endpoint for Render"""
     return jsonify({"status": "healthy", "initialized": _initialized}), 200
+
+
+@app.route("/debug")
+def debug():
+    """Debug endpoint to test initialization"""
+    import os
+    return jsonify({
+        "resume_pdf_exists": os.path.exists(RESUME_PDF_PATH),
+        "resume_pdf_path": RESUME_PDF_PATH,
+        "chroma_db_path": CHROMA_DB_PATH,
+        "initialized": _initialized,
+        "initialization_error": _initialization_error,
+        "groq_api_key_set": bool(os.environ.get("GROQ_API_KEY"))
+    }), 200
 
 
 @app.route("/")
