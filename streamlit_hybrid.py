@@ -139,10 +139,10 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
     response = supabase.table('resume_embeddings').select('*').execute()
 
     if not response.data:
-        print("⚠️ No embeddings found in Supabase!")
+        st.warning(f"⚠️ No embeddings found in Supabase!")
         return ["No resume data found. Please check if embeddings were uploaded."]
 
-    print(f"📊 Found {len(response.data)} embeddings in database")
+    st.info(f"📊 Database: Found {len(response.data)} embeddings")
 
     # Calculate similarities
     similarities = []
@@ -276,6 +276,14 @@ def main():
         with st.spinner("🔍 Searching Supabase..."):
             relevant_chunks = search_similar(user_input, supabase, model, k=3)
             context = "\n\n".join(relevant_chunks)
+
+        # DEBUG: Show what was found
+        with st.expander("🔍 Debug: Retrieved Context", expanded=False):
+            st.write(f"**Found {len(relevant_chunks)} relevant chunks**")
+            for i, chunk in enumerate(relevant_chunks, 1):
+                st.text(f"Chunk {i}: {chunk[:200]}...")
+            st.divider()
+            st.text(f"Full context length: {len(context)} characters")
 
         with st.spinner("💭 Thinking..."):
             response = generate_response(user_input, context, groq_client)
