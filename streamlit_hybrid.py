@@ -184,12 +184,24 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
 
     # Check if we found any valid similarities
     if not similarities:
-        return ["No relevant information found in the resume."]
+        return [], []  # Return empty lists for content and scores
 
-    # Sort and get top k
+    # Sort by similarity score (highest first)
     similarities.sort(key=lambda x: x[1], reverse=True)
 
-    return [content for content, _ in similarities[:k]]
+    # Filter by minimum similarity threshold (0.3 = 30% similar)
+    SIMILARITY_THRESHOLD = 0.3
+    filtered = [(content, score) for content, score in similarities[:k] if score >= SIMILARITY_THRESHOLD]
+
+    if not filtered:
+        st.warning(f"⚠️ No chunks met similarity threshold ({SIMILARITY_THRESHOLD}). Best score: {similarities[0][1]:.3f}")
+        return [], []
+
+    # Return separate lists of content and scores
+    contents = [content for content, _ in filtered]
+    scores = [score for _, score in filtered]
+
+    return contents, scores
 
 # Generate response
 def generate_response(query: str, context: str, client: Groq, conversation_history: list = None):
@@ -205,16 +217,21 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 
 > **Hey, happy to see you. I am Tipu, the assistant of Abdul Rauf. What would you like to know about Abdul Rauf's professional career?**
 
-### Answering Rules
+### CRITICAL RULES - NO EXCEPTIONS:
 
-* Use ONLY information from the context provided below
-* Pay close attention to company names and dates - do NOT mix up different companies
-* If the question asks about a specific company, ONLY mention that company's information
-* If answer not found in context, say: *I'm sorry, I don't have that information available in Abdul Rauf's professional records.*
-* Be concise and professional
-* Read the context carefully before answering
+1. **NEVER make up or infer information** - if it's not explicitly in the context, say you don't have it
+2. **NEVER mix up companies** - each company mentioned in context is different
+3. **Quote exact company names** from the context - don't paraphrase or guess
+4. **Verify dates and details** match the exact company being asked about
+5. **If uncertain, say you don't know** - accuracy is more important than answering
 
-### CONTEXT:
+### When answering:
+* First, find the exact company/topic mentioned in the question within the context
+* Second, extract ONLY the information related to that specific company/topic
+* Third, respond using ONLY what you found - no additions or assumptions
+* If the specific information isn't in the context, say: *I'm sorry, I don't have that information available in Abdul Rauf's professional records.*
+
+### CONTEXT (your ONLY source of truth):
 {context}"""
 
     try:
@@ -292,15 +309,22 @@ def main():
 
         # Search and generate
         with st.spinner("🔍 Searching Supabase..."):
-            relevant_chunks = search_similar(user_input, supabase, model, k=5)  # Increased for better context
+            relevant_chunks, similarity_scores = search_similar(user_input, supabase, model, k=5)
+
+            if not relevant_chunks:
+                st.error("❌ No relevant information found. Please try rephrasing your question.")
+                st.stop()
+
             context = "\n\n".join(relevant_chunks)
 
-        # DEBUG: Show what was found
+        # DEBUG: Show what was found with similarity scores
         with st.expander("🔍 Debug: Retrieved Context", expanded=False):
             st.write(f"**Found {len(relevant_chunks)} relevant chunks**")
-            for i, chunk in enumerate(relevant_chunks, 1):
-                st.text(f"Chunk {i}: {chunk[:200]}...")
-            st.divider()
+            st.write("**Similarity Scores (higher = more relevant):**")
+            for i, (chunk, score) in enumerate(zip(relevant_chunks, similarity_scores), 1):
+                st.write(f"**Chunk {i} - Score: {score:.3f}** ({score*100:.1f}% match)")
+                st.text(f"{chunk[:200]}...")
+                st.divider()
             st.text(f"Full context length: {len(context)} characters")
 
         with st.spinner("💭 Thinking..."):
