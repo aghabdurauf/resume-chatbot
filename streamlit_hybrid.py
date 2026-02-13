@@ -131,7 +131,7 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
     """Search for similar chunks in Supabase"""
 
     # Encode query
-    query_embedding = model.encode([query])[0].tolist()
+    query_embedding = model.encode([query])[0]
 
     # Search using RPC function (we'll create this)
     # For now, get all and search locally (not optimal but works)
@@ -142,15 +142,22 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
 
     # Calculate similarities
     similarities = []
-    query_vec = np.array(query_embedding)
+    query_vec = np.array(query_embedding, dtype=np.float32)
 
     for row in response.data:
-        embedding = np.array(row['embedding'])
-        # Cosine similarity
-        similarity = np.dot(query_vec, embedding) / (
-            np.linalg.norm(query_vec) * np.linalg.norm(embedding)
-        )
-        similarities.append((row['content'], similarity))
+        # Convert embedding to numpy array with explicit dtype
+        embedding = np.array(row['embedding'], dtype=np.float32)
+
+        # Cosine similarity with safe division
+        query_norm = np.linalg.norm(query_vec)
+        embedding_norm = np.linalg.norm(embedding)
+
+        if query_norm > 0 and embedding_norm > 0:
+            similarity = np.dot(query_vec, embedding) / (query_norm * embedding_norm)
+        else:
+            similarity = 0.0
+
+        similarities.append((row['content'], float(similarity)))
 
     # Sort and get top k
     similarities.sort(key=lambda x: x[1], reverse=True)
