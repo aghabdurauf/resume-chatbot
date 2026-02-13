@@ -1,12 +1,10 @@
 from flask import Flask, render_template, request, jsonify
 from groq import Groq
 import os
-from pypdf import PdfReader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-import chromadb
 from dotenv import load_dotenv
+
+# Lazy imports - only import heavy libraries when needed
+# This allows the app to start quickly and bind to port immediately
 
 load_dotenv()
 
@@ -16,8 +14,18 @@ app = Flask(__name__)
 RESUME_PDF_PATH = os.path.join(os.path.dirname(__file__), "resume.pdf")
 CHROMA_DB_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
 
-# Initialize Groq client
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+# Initialize Groq client (lazy initialization)
+client = None
+
+
+def get_groq_client():
+    global client
+    if client is None:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable not set")
+        client = Groq(api_key=api_key)
+    return client
 
 # --- RAG Setup ---
 
@@ -31,6 +39,7 @@ _initialization_error = None
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
         _embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={"device": "cpu"},
@@ -40,6 +49,12 @@ def get_embeddings():
 
 def load_and_process_resume():
     global _vectordb, _resume_chunks
+
+    # Lazy imports
+    from pypdf import PdfReader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from langchain_community.vectorstores import Chroma
+    import chromadb
 
     pdf_reader = PdfReader(RESUME_PDF_PATH)
     text = ""
@@ -145,7 +160,8 @@ Accuracy is mandatory. Creativity is not allowed.
 ### RAG CONTEXT (Use ONLY this information to answer):
 {context}"""
 
-    chat_completion = client.chat.completions.create(
+    groq_client = get_groq_client()
+    chat_completion = groq_client.chat.completions.create(
         messages=[
             {"role": "system", "content": system_prompt.format(context=context)},
             {"role": "user", "content": query},
@@ -193,7 +209,11 @@ def chat():
 
 # --- Startup ---
 
-print("🚀 Flask app starting... (RAG will initialize on first request)")
+import sys
+print("🚀 Flask app starting... (RAG will initialize on first request)", flush=True)
+print(f"✅ Python version: {sys.version}", flush=True)
+print(f"✅ PORT env var: {os.environ.get('PORT', 'NOT SET')}", flush=True)
+print(f"✅ GROQ_API_KEY env var: {'SET' if os.environ.get('GROQ_API_KEY') else 'NOT SET'}", flush=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
