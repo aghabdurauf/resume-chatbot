@@ -138,26 +138,46 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
     response = supabase.table('resume_embeddings').select('*').execute()
 
     if not response.data:
-        return []
+        print("⚠️ No embeddings found in Supabase!")
+        return ["No resume data found. Please check if embeddings were uploaded."]
+
+    print(f"📊 Found {len(response.data)} embeddings in database")
 
     # Calculate similarities
     similarities = []
     query_vec = np.array(query_embedding, dtype=np.float32)
 
     for row in response.data:
-        # Convert embedding to numpy array with explicit dtype
-        embedding = np.array(row['embedding'], dtype=np.float32)
+        try:
+            # Convert embedding to numpy array with explicit dtype
+            if row.get('embedding') is None:
+                continue  # Skip rows with null embeddings
 
-        # Cosine similarity with safe division
-        query_norm = np.linalg.norm(query_vec)
-        embedding_norm = np.linalg.norm(embedding)
+            embedding = np.array(row['embedding'], dtype=np.float32)
 
-        if query_norm > 0 and embedding_norm > 0:
-            similarity = np.dot(query_vec, embedding) / (query_norm * embedding_norm)
-        else:
-            similarity = 0.0
+            # Validate embedding shape
+            if embedding.shape != query_vec.shape:
+                continue  # Skip mismatched dimensions
 
-        similarities.append((row['content'], float(similarity)))
+            # Cosine similarity with safe division
+            query_norm = np.linalg.norm(query_vec)
+            embedding_norm = np.linalg.norm(embedding)
+
+            if query_norm > 0 and embedding_norm > 0:
+                similarity = np.dot(query_vec, embedding) / (query_norm * embedding_norm)
+            else:
+                similarity = 0.0
+
+            similarities.append((row['content'], float(similarity)))
+
+        except Exception as e:
+            # Skip problematic embeddings
+            print(f"Skipping row due to error: {e}")
+            continue
+
+    # Check if we found any valid similarities
+    if not similarities:
+        return ["No relevant information found in the resume."]
 
     # Sort and get top k
     similarities.sort(key=lambda x: x[1], reverse=True)
