@@ -40,7 +40,26 @@ def get_groq_client():
     """Initialize Groq client with API key from Streamlit secrets"""
     api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY"))
     if not api_key:
-        st.error("⚠️ GROQ_API_KEY not found in secrets or environment variables!")
+        st.error("⚠️ GROQ_API_KEY not found!")
+        st.markdown("""
+        ### 🔧 How to Fix This:
+
+        1. Go to your **Streamlit Cloud Dashboard**: https://share.streamlit.io/
+        2. Find your app and click **Settings** (⚙️ icon)
+        3. Click **"Secrets"** in the left sidebar
+        4. Add your Groq API key in this format:
+
+        ```toml
+        GROQ_API_KEY = "your_groq_api_key_here"
+        ```
+
+        5. Click **"Save"**
+        6. App will restart automatically
+
+        **Get your API key from:** https://console.groq.com/keys
+
+        **Need help?** https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management
+        """)
         st.stop()
     return Groq(api_key=api_key)
 
