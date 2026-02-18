@@ -252,7 +252,7 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="glm-4-flash",
+            model="glm-5",
             temperature=0.5,
             max_tokens=1024,
         )
