@@ -193,7 +193,7 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
     similarities.sort(key=lambda x: x[1], reverse=True)
 
     # Filter by minimum similarity threshold (0.3 = 30% similar)
-    SIMILARITY_THRESHOLD = 0.3
+    SIMILARITY_THRESHOLD = 0.1
     filtered = [(content, score) for content, score in similarities[:k] if score >= SIMILARITY_THRESHOLD]
 
     if not filtered:
