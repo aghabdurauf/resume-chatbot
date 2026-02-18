@@ -252,7 +252,7 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="glm-5",
+            model="glm-4.7-flash",
             temperature=0.5,
             max_tokens=1024,
         )
@@ -263,7 +263,7 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 # Main app
 def main():
     st.title("💼 Abdul Rauf - Resume Chatbot")
-    st.markdown("**🚀 Hybrid RAG: Local Embeddings + Supabase Vector DB | Powered by GLM-4-Flash**")
+    st.markdown("**🚀 Hybrid RAG: Local Embeddings + Supabase Vector DB | Powered by GLM-4.7-Flash**")
     st.markdown("---")
 
     # Initialize clients
@@ -361,7 +361,7 @@ def main():
         - 📊 ~200MB memory usage
 
         **Tech Stack:**
-        - GLM-4-Flash (ZhipuAI)
+        - GLM-4.7-Flash (ZhipuAI)
         - Supabase pgvector
         - Sentence Transformers
         - Streamlit
