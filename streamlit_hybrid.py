@@ -1,5 +1,5 @@
 import streamlit as st
-from groq import Groq
+from openai import OpenAI
 import os
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
@@ -35,15 +35,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Groq client
+# Initialize GLM client
 @st.cache_resource
-def get_groq_client():
-    """Initialize Groq client"""
-    api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY"))
+def get_glm_client():
+    """Initialize GLM (ZhipuAI) client"""
+    api_key = st.secrets.get("GLM_API_KEY", os.environ.get("GLM_API_KEY"))
     if not api_key:
-        st.error("⚠️ GROQ_API_KEY not found in secrets!")
+        st.error("⚠️ GLM_API_KEY not found in secrets!")
         st.stop()
-    return Groq(api_key=api_key)
+    return OpenAI(
+        api_key=api_key,
+        base_url="https://open.bigmodel.cn/api/paas/v4/"
+    )
 
 # Initialize Supabase client
 @st.cache_resource
@@ -204,7 +207,7 @@ def search_similar(query: str, supabase: Client, model: SentenceTransformer, k: 
     return contents, scores
 
 # Generate response
-def generate_response(query: str, context: str, client: Groq, conversation_history: list = None):
+def generate_response(query: str, context: str, client: OpenAI, conversation_history: list = None):
     """Generate response using Groq with conversation history"""
 
     system_prompt = """You are **Tipu**, a professional AI assistant representing **Abdul Rauf**.
@@ -249,8 +252,8 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="llama-3.1-8b-instant",
-            temperature=0.5,  # Reduced for more focused answers
+            model="glm-4-flash",
+            temperature=0.5,
             max_tokens=1024,
         )
         return chat_completion.choices[0].message.content
@@ -260,11 +263,11 @@ When a user greets with words like **Hello, Hi, Hey, Salaam**, respond exactly w
 # Main app
 def main():
     st.title("💼 Abdul Rauf - Resume Chatbot")
-    st.markdown("**🚀 Hybrid RAG: Local Embeddings + Supabase Vector DB**")
+    st.markdown("**🚀 Hybrid RAG: Local Embeddings + Supabase Vector DB | Powered by GLM-4-Flash**")
     st.markdown("---")
 
     # Initialize clients
-    groq_client = get_groq_client()
+    groq_client = get_glm_client()
     supabase = get_supabase_client()
     model = get_embeddings_model()
 
@@ -358,7 +361,7 @@ def main():
         - 📊 ~200MB memory usage
 
         **Tech Stack:**
-        - Groq AI (Llama 3.1)
+        - GLM-4-Flash (ZhipuAI)
         - Supabase pgvector
         - Sentence Transformers
         - Streamlit
